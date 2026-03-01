@@ -36,12 +36,9 @@ if st.sidebar.button("🚀 차트 분석 실행", type="primary"):
                 df.columns = df.columns.get_level_values(0)
             
             # 2. 고점/저점(스윙 파동) 탐지 알고리즘
-            # 고점 찾기 (High 기준)
             peaks_idx, _ = find_peaks(df['High'].values, distance=wave_sensitivity)
-            # 저점 찾기 (Low를 음수로 뒤집어서 고점 찾기 함수 적용)
             troughs_idx, _ = find_peaks(-df['Low'].values, distance=wave_sensitivity)
             
-            # 고점과 저점을 하나의 리스트로 합치고 시간순으로 정렬
             pivots = []
             for idx in peaks_idx:
                 pivots.append((df.index[idx], df['High'].iloc[idx], 'Peak'))
@@ -50,15 +47,13 @@ if st.sidebar.button("🚀 차트 분석 실행", type="primary"):
                 
             pivots.sort(key=lambda x: x[0])
             
-            # 연속된 Peak나 Trough가 나올 경우 필터링 (완벽한 지그재그를 위해)
             filtered_pivots = []
             if len(pivots) > 0:
                 filtered_pivots.append(pivots[0])
                 for i in range(1, len(pivots)):
-                    if pivots[i][2] != filtered_pivots[-1][2]: # 이전과 타입이 다를 때만 추가
+                    if pivots[i][2] != filtered_pivots[-1][2]: 
                         filtered_pivots.append(pivots[i])
                     else:
-                        # 타입이 같으면 더 높은 고점이나 더 낮은 저점으로 갱신
                         if pivots[i][2] == 'Peak' and pivots[i][1] > filtered_pivots[-1][1]:
                             filtered_pivots[-1] = pivots[i]
                         elif pivots[i][2] == 'Trough' and pivots[i][1] < filtered_pivots[-1][1]:
@@ -76,14 +71,12 @@ if st.sidebar.button("🚀 차트 분석 실행", type="primary"):
                 wave_start_price = prev_pivot[1]
                 wave_end_price = last_pivot[1]
                 
-                # 피보나치 비율 (실전에서 가장 많이 쓰이는 주요 레벨)
                 fib_levels = [0.0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0]
                 fib_prices = {}
                 
                 diff = wave_end_price - wave_start_price
                 
                 for level in fib_levels:
-                    # 시작점에서 끝점 방향으로 되돌림 계산
                     fib_prices[level] = wave_end_price - (diff * level)
                     
                 is_uptrend_wave = wave_end_price > wave_start_price
@@ -92,13 +85,11 @@ if st.sidebar.button("🚀 차트 분석 실행", type="primary"):
             # 4. Plotly 차트 그리기
             fig = go.Figure()
 
-            # 캔들스틱 추가
             fig.add_trace(go.Candlestick(
                 x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'],
                 name="Price", increasing_line_color='#2ecc71', decreasing_line_color='#e74c3c'
             ))
 
-            # 파동(ZigZag) 라인 추가
             fig.add_trace(go.Scatter(
                 x=pivot_dates, y=pivot_prices, mode='lines+markers+text',
                 name='엘리어트 파동 (스윙)',
@@ -108,7 +99,6 @@ if st.sidebar.button("🚀 차트 분석 실행", type="primary"):
                 textposition="top center" if pivot_types[0] == 'Peak' else "bottom center"
             ))
 
-            # 피보나치 되돌림 라인 그리기 (최근 스윙 기준)
             if len(filtered_pivots) >= 2:
                 colors = {0.0: '#95a5a6', 0.236: '#e74c3c', 0.382: '#e67e22', 0.5: '#f1c40f', 0.618: '#2ecc71', 0.786: '#3498db', 1.0: '#95a5a6'}
                 
@@ -128,9 +118,9 @@ if st.sidebar.button("🚀 차트 분석 실행", type="primary"):
                 hovermode='x unified'
             )
 
-            # --- 결과 대시보드 출력 ---
             st.plotly_chart(fig, use_container_width=True)
             
+            # --- 결과 대시보드 및 AI 코멘트 출력 ---
             if len(filtered_pivots) >= 2:
                 st.subheader("📊 현재 진행 중인 파동 브리핑")
                 st.info(f"현재 주가는 최근 발생한 **{wave_direction}**에 대한 **되돌림(Retracement) 또는 확장** 구간에 있습니다.")
@@ -149,6 +139,44 @@ if st.sidebar.button("🚀 차트 분석 실행", type="primary"):
                 })
                 st.dataframe(fib_df, hide_index=True, use_container_width=True)
                 
+                # --- 🔥 핵심 추가: AI 시사점 도출 로직 ---
+                st.divider()
+                st.subheader("🤖 AI 트레이딩 코멘트 및 시사점")
+                
+                # 현재 가격이 전체 파동 대비 몇 % 되돌림 위치인지 수학적으로 역산
+                ret_ratio = (wave_end_price - curr_price) / diff
+                
+                if is_uptrend_wave:
+                    if ret_ratio < 0:
+                        comment = "🔥 **추세 연장 (Extension):** 최근 고점을 돌파하며 새로운 상승 파동을 써내려가고 있습니다. 상승 모멘텀이 매우 강한 상태로, 기존 보유자는 수익을 극대화(Trailing Stop)하는 전략이 유효합니다."
+                    elif ret_ratio <= 0.382:
+                        comment = "📈 **건전한 조정 (Healthy Pullback):** 상승장 속의 가벼운 눌림목 구간입니다. 0.236 ~ 0.382 라인에서 지지를 받는다면 훌륭한 단기 매수(롱) 타점이 될 수 있습니다."
+                    elif ret_ratio <= 0.618:
+                        comment = "⭐ **핵심 지지 구간 (Golden Zone):** 엘리어트 파동 이론상 2파 또는 4파의 저점이 형성될 확률이 가장 높은 **0.5 ~ 0.618 황금 비율 구간**입니다. 이 구간에서 하락이 멈추고 반등 캔들(도지, 망치형 등)이 뜬다면 최적의 스윙 매수 기회입니다."
+                    elif ret_ratio <= 1.0:
+                        comment = "⚠️ **깊은 조정 (Deep Retracement):** 상승분의 61.8% 이상을 반납했습니다. 매수세가 상당히 약해졌으며, 이전 저점(100% 되돌림 선)이 깨지는지 주의 깊게 관찰해야 하는 리스크 관리 구간입니다."
+                    else:
+                        comment = "🚨 **상승 추세 붕괴 (Trend Reversal):** 이전 파동의 시작점을 하향 이탈했습니다. 기존의 상승 파동 관점은 폐기되며, 본격적인 하락 추세(A-B-C 파동) 전환을 대비해야 합니다."
+                else: # 하락 파동일 경우
+                    if ret_ratio < 0:
+                        comment = "🧊 **하락 추세 연장 (Extension):** 최근 저점을 깨고 지하로 파고드는 중입니다. 완벽한 역배열 상태이며 섣부른 물타기(바닥 잡기)는 매우 위험합니다."
+                    elif ret_ratio <= 0.382:
+                        comment = "📉 **약한 기술적 반등 (Dead Cat Bounce):** 하락장 속의 가벼운 되돌림입니다. 여전히 매도 압력이 강해 다시 맞고 떨어질(추가 하락) 위험이 높습니다."
+                    elif ret_ratio <= 0.618:
+                        comment = "🧱 **핵심 저항 구간 (Golden Zone):** 하락 파동에 대한 기술적 반등의 최대 목표치(0.5 ~ 0.618 황금 비율) 부근입니다. 엘리어트 하락 파동 이론상 여기서 저항을 맞고 다시 더 큰 하락(3파 또는 C파)이 나올 확률이 높으므로, 비중 축소나 숏(매도) 포지션을 고려할 수 있는 핵심 저항대입니다."
+                    elif ret_ratio <= 1.0:
+                        comment = "☀️ **강한 반등 (Strong Recovery):** 하락분의 61.8% 이상을 회복했습니다. 매도세가 소진되고 매수세가 강하게 유입되며 추세 반전(상승)의 에너지가 모이고 있습니다."
+                    else:
+                        comment = "🚀 **하락 추세 종료 (Trend Reversal):** 이전 고점을 완벽히 뚫고 올라왔습니다. 기존의 하락 파동 관점은 폐기되며, 새로운 상승 1파가 시작되었을 가능성이 큽니다."
+                
+                # 코멘트를 눈에 띄는 박스로 출력
+                if ret_ratio < 0 or ret_ratio > 1:
+                    st.error(comment)
+                elif ret_ratio <= 0.618 and ret_ratio > 0.382:
+                    st.success(comment) # 골든존은 초록색(기회)으로 표시
+                else:
+                    st.warning(comment)
+                    
             else:
                 st.warning("분석할 만큼의 명확한 파동(고점/저점)이 1년 내에 형성되지 않았습니다. 좌측 메뉴에서 '파동 민감도'를 낮춰보세요.")
 
